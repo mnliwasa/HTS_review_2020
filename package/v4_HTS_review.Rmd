@@ -1,0 +1,637 @@
+---
+title: "v3_HTS_review_2020"
+author: "Dr Marriott Nliwasa"
+date: "24/02/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+***
+## 1. Background
+This document is an analysis of **TB** and **HIV** screening among *adults with symptoms of TB*
+
+<br>
+These are the main outcomes:
+
+1. HIV outcomes
+- prevalence of HIV
+- number needed to screen to detect one HIV positive case
+- description of HIV testing strategies
+2. TB outcomes 
+- prevalence of TB
+3. Ratio of HIV prevalence in TB patients and presumptive TB patients
+
+<br>
+This is an updated review [^1]
+
+[^1]: Nliwasa et al. JIAS. 2018 [link](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC6067081/)
+
+## 2. Set-up
+Loading necessary packages
+```{r echo=F}
+.libPaths(c("C:/Users/Marriott Nliwasa/Documents/R/win-library/3.4", .libPaths()))
+```
+
+## 3. Load packages
+
+```{r echo=F, cache=FALSE, results=FALSE, warning=FALSE, comment=FALSE, warning=FALSE, warn.conflicts = FALSE, message=F}
+
+#install.packages("dplyr")
+#install.packages("meta")
+#install.packages("metafor")
+#install.packages("ggplot2")
+#install.packages("gridExtra")
+#install.packages("xlsx")
+#install.packages("doBy")
+#install.packages("devtools")
+#install.packages("ggpmisc")
+#install.packages("tidyverse")
+#install_github("rstudio/gt")
+#install_github("jkmisc")
+#install.packages("janitor")
+#install.packages("skimr")
+#install.packages("ggalt")
+#install.packages("here")
+#install.packages("forcats")
+#install.packages("ellipses")
+#install.packages("here")
+#install.packages("ggrepel")
+#install.packages("gt")
+```
+
+```{r echo=T, cache=FALSE, results=FALSE, warning=FALSE, comment=FALSE, warning=FALSE, warn.conflicts = FALSE, message=F}
+
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+library(metafor)
+library(meta)
+library(devtools)
+library(dplyr)
+library(stats)
+library(ggpmisc)
+library(tidyverse)
+library(here)
+library(ggrepel)
+library(ggalt)
+library(forcats)
+
+```
+
+=================================================================
+
+## 4. Importing data
+```{r}
+reviewdata<-read.csv(here("review2_data/Extended_dataset_v7.csv"))
+str(reviewdata)
+dim(reviewdata)
+```
+
+
+## 5. Data cleaning
+
+```{r}
+df1<-reviewdata
+dim(df1)
+
+#create the study label variable
+df1$label <- paste(df1$e05_country, df1$e02_author, df1$e04_print_year, sep = ", ")
+nrow(df1)
+        
+#create the sort variable --- by prevalence of HIV in suspects
+df1$p <- round((df1$e21_HIV._suspects/df1$e20_susp_scrn),dig=2)
+        
+#key confounding variables
+
+#*setting-level of care
+table(df1$e09_setting)
+df1$setting <- factor(df1$e09_setting, levels = c(
+  "community", "primary care", "mix","hospital mixed", "hospital inpatient", "hospital outpatient"))
+df1$setting[df1$setting=="hospital mixed"]<-"mix" 
+df1$setting[df1$setting=="hospital outpatient"]<-"mix"
+df1$setting <- factor(df1$setting, levels = c(
+  "community", "primary care", "mix", "hospital inpatient"))
+
+table(df1$setting)
+        
+#*geographical region        
+table(df1$e08_subregion)
+df1$subregion <- df1$e08_subregion
+df1$subregion <- factor(as.character(df1$subregion), levels = c(
+  "Americas", "Central Africa", "East Africa", "Southern Africa", "South-East Asia", "West Africa", "Western pacific"))
+
+table(df1$subregion)
+        
+#*definition suspect
+table(df1$e16_suspect_definition)
+df1$definition[df1$e16_suspect_definition=="cough any duration or other "]<-"other"
+df1$definition[df1$e16_suspect_definition=="cough any duration or other"]<-"other"
+df1$definition[df1$e16_suspect_definition=="chronic cough and other"]<-"chronic cough" 
+df1$definition[df1$e16_suspect_definition=="chronic cough "]<-"chronic cough"
+df1$definition[df1$e16_suspect_definition=="chronic cough"]<-"chronic cough"
+df1$definition[df1$e16_suspect_definition=="chronic cough or other"]<-"other"
+df1$definition[df1$e16_suspect_definition=="chronic cough or other"]<-"other"
+df1$definition[df1$e16_suspect_definition=="clinician identified"]<-"other"
+df1$definition[df1$e16_suspect_definition=="any TB symptom"]<-"other"
+df1$definition[df1$e16_suspect_definition=="other"]<-"other"
+table(df1$definition)
+df1$definition <- factor(as.character(df1$definition), levels = c(
+  "chronic cough", "other"))
+
+table(df1$definition)
+
+#*individual country
+table(df1$e05_country)
+df1$e05_country <- factor(as.character(df1$e05_country), levels = c(
+  "Botswana", "Cambodia", "DR Congo", "Ethiopia", "G. Bissau", "Ghana", "Haiti", "India" ,"Kenya", "Malawi", "Nepal", 
+  "Nigeria", "Peru","Rwanda", "South Africa", "Tanzania", "Thailand", "Uganda", "Zambia", "Zimbabwe"))
+table(df1$e05_country)
+ 
+#*HIV prevalence in general population      
+summary(df1$e11_countryHIV.)
+df1$countryHIVprev<-cut(df1$e11_countryHIV., breaks= c(0, 5, 30), labels = c("low (0-5%)", "high(5-30%)"))
+table(df1$countryHIVprev)
+
+
+
+#*population-level HIV prevalence (based on region prevalence)
+summary(df1$e50_subHIV)
+df1$popHIVprev<-cut(df1$e50_subHIV, breaks= c(0, 5, 30), labels = c("low (0-5%)", "high(5-30%)"))
+table(df1$popHIVprev)
+
+#*TB screening type
+table(df1$e23_tbscrn_type)
+df1$tbscreen <- df1$e23_tbscrn_type
+table(df1$tbscreen)
+df1$tbscreen <- factor(as.character(df1$tbscreen), levels = c("diagnostic", "none", "screening"))
+table(df1$tbscreen)
+
+#*group offered HIV
+table(df1$e17_offered_HIV)
+df1$allHIVoffer <- df1$e17_offered_HIV
+table(df1$allHIVoffer)
+df1$allHIVoffer <- factor(as.character(df1$allHIVoffer), levels = c(
+  "all participants", "other", "participants with symptoms"))
+table(df1$allHIVoffer)
+
+#study quality for measuring HIV prevalence
+table(df1$e45_qual_HIV)
+df1$quality_HIV <- df1$e45_qual_HIV
+df1$quality_HIV[df1$e45_qual_HIV=="Unclear risk"]<-"High risk" 
+table(df1$quality_HIV)
+
+#study quality for measuring TB
+table(df1$e46_qual_TB)
+df1$quality_TB <- df1$e46_qual_TB
+df1$quality_TB[df1$e46_qual_TB=="Unclear risk"]<-"High risk" 
+table(df1$quality_TB)
+
+#ART coverage--where 81% is cut-off for achieving second 90 in 909090
+
+summary(df1$e47_artcov)
+hist(df1$e47_artcov)
+df1$artcov<-cut(df1$e47_artcov, breaks= c(-0.9, 40, 81), labels = c("low (0-40%)", "moderate(40-81%)"))
+
+table(df1$artcov)
+
+#study mid-year
+hist(df1$e03_middatayr)
+summary(df1$e03_middatayr)
+df1$midyr<-cut(df1$e03_middatayr, breaks= c(2000, 2006, 2011, 2017), labels = c("2001/06","2006/11", "2011/16"))
+table(df1$midyr)
+
+```
+
+## 6. Table 1 Characteristics of included studies
+
+```{r}
+dim(df1)
+df1a<- df1
+dim(df1a)
+
+#this section was for generating table 1 of the published review paper
+
+#*number of countries per region
+numcountry<-aggregate(df1a["e01_id"], by=df1a[c("e08_subregion","e05_country")], FUN=length)
+tab_numcountry<-table(numcountry$e08_subregion)
+tab_numcountry
+perc_numcountry<- (prop.table(tab_numcountry)*100)
+perc_numcountry
+
+#*Number of studies per region
+tablerege<-table(df1a$subregion, useNA= "ifany")
+tablerege
+perc_tablerege<- (prop.table(tablerege)*100)
+perc_tablerege
+
+#*definition c2wks per region
+num2wk<-aggregate(df1a["e01_id"], by=df1a[c("e08_subregion","definition")], FUN=length)
+tab_num2wk<-table(num2wk$definition)
+perc_tab_num2wk<- (prop.table(tab_num2wk)*100)
+perc_tab_num2wk
+
+#*setting per region
+numsetting<-aggregate(df1a["e01_id"], by=df1a[c("e08_subregion","setting")], FUN=length)
+tab_numcountry<-table(numsetting$e08_subregion)
+tab_numcountry
+perc_numcountry<- (prop.table(tab_numcountry)*100)
+perc_numcountry
+
+#*median year of study
+summary(df1a$e03_middatayr)
+medyr<-aggregate(df1a["e03_middatayr"], by=df1a[c("subregion")], FUN=summary)
+medyr
+
+#*population HIV prevalence
+summary(df1a$e11_countryHIV)
+hist (df1a$e11_countryHIV.)
+hivpop<-aggregate(df1a["e11_countryHIV."], by=df1a[c("subregion")], FUN=summary)
+hivpop
+
+#bubble ART coverage and population HIV
+
+ggplot(df1a, aes(x = e03_middatayr, y = e47_artcov_perc)) + 
+  geom_point(aes(color = popHIVprev, size = e16_number_suspects,  label=e05_country), alpha = 1) +
+  #geom_text_repel(aes(label = e05_country,  color = popHIVprev), size = 2.5)+
+  scale_color_manual(values = c("steelblue", "firebrick")) +
+  scale_x_continuous(breaks=c(2001,2002,2003,2004,2005,2006,2007,2008,2009,2010,2011,2012,2013,2014,2015,2016))+
+  scale_y_continuous(limits= c(0,100), breaks=c(0,25,50,75, 100))+
+  scale_size(range = c(2, 15))+
+  theme_bw()
+ggsave("df1a.png", dpi=600)
+
+
+#*number of suspects
+
+aggregate(df1a[c("e16_number_suspects")], by=df1a[c("subregion")], FUN = sum)
+
+sum(df1a$e16_number_suspects)
+```
+
+## 7.Uptake of HIV testing
+
+```{r}
+#defining uptake
+dim(df1a)
+df1a$uptake_hiv <-df1a$e20_susp_scrnhiv/df1a$e16_number_suspects*100
+summary(df1a$uptake_hiv)
+hist(df1a$uptake_hiv)
+```
+
+## 11. Relationships
+```{r}
+
+df2<-df1a
+sum(df2$e16_number_suspects)
+sum(df2$e20_susp_scrnhiv)
+
+p<-df2$e21_HIV._suspects/df2$e20_susp_scrnhiv
+summary(df2$p)
+
+#graph1
+df2$hiv_prev_in_tb_symptoms<-df2$e21_HIV._suspects/df2$e20_susp_scrnhiv
+df2$hiv_prev_in_tb_cases<-df2$e28_n_HIVposTB/df2$e27_Tbcases_HIVden
+df2a<-subset(df2, df2$hiv_prev_in_tb_cases !="NA" & setting=="community")
+df2a<-subset(df2, df2$hiv_prev_in_tb_case !="NA")
+
+df2a %>%
+ggplot() +
+geom_dumbbell(aes(y=fct_reorder(df2a$label, df2a$hiv_prev_in_tb_symptoms),
+  x=df2a$hiv_prev_in_tb_symptoms, xend=df2a$hiv_prev_in_tb_cases), size=2,
+  dot_guide = TRUE, dot_guide_size = 0.25,
+  colour_x = "steelblue", colour_xend = "firebrick", colour = "steelblue") +
+  scale_x_continuous(labels = scales::percent, limits = c(0,1)) +
+  theme_bw()+
+    theme(axis.title.x=element_blank(),axis.title.y=element_blank())+
+   facet_wrap(.~factor(df2a$setting), scales = "free_y")
+ggsave("df2a.png", width = 7.29, height = 6.0)
+```
+
+##Table 4 analysis
+```{r}
+df2b<- select(df2, e01_id, label, e21_HIV._suspects, e20_susp_scrnhiv,setting, e11_countryHIV., countryHIVprev, subregion, definition, e28_n_HIVposTB, e27_Tbcases_HIVden, midyr, quality_HIV, artcov, e50_subHIV_perc,  popHIVprev, p, studytbhivprev)
+
+df2b<- subset(df2b, studytbhivprev != "NA")
+
+write.csv(df2b, file = "C:/Users/Marriott Nliwasa/Dropbox/R/working_file/df2_hiv.csv", row.names = TRUE, na = "")
+
+dim(df2b)
+
+#prevalence ratios by
+
+
+table(df2b$setting)
+
+
+#g1---Forest plot of HIV prevalence by level of care
+
+#presumptive
+tiff("g1a.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e21_HIV._suspects, e20_susp_scrnhiv, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=setting, comb.fixed=T, comb.random=T, sm="PAS", data=df2b), 
+       sortvar=df2b$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off() 
+
+
+#TB patients
+tiff("g1b.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e28_n_HIVposTB, e27_Tbcases_HIVden, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=setting, comb.fixed=T, comb.random=T, sm="PAS", data=df2b), 
+       sortvar=df2b$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off() 
+
+#ratio
+dfx <- df2b %>%
+   mutate(e27_Tbcases_HIVden = as.numeric(e27_Tbcases_HIVden))%>%
+  mutate(cases_hivpos = e28_n_HIVposTB,
+         cases_hivneg = (e27_Tbcases_HIVden - e28_n_HIVposTB),
+         suspect_hivpos = e21_HIV._suspects,
+         suspects_hivneg = (e20_susp_scrnhiv - e21_HIV._suspects))
+
+dfy<- subset(dfx, cases_hivpos !="NA" &  cases_hivneg!="NA" &  suspect_hivpos!="NA" & suspects_hivneg !="NA")
+
+#m5<- rma(ai=suspect_hivpos, bi=suspects_hivneg, ci=cases_hivpos, di=cases_hivneg,
+               #mods = ~ relevel(subregion,ref='South-East Asia'), data=dfy, measure="PR", #method="REML")
+
+#m5$b <- exp(m5$b)
+#m5$ci.lb <- exp(m5$ci.lb)
+#m5$ci.ub <- exp(m5$ci.ub)
+
+#summary(m5)
+
+#g2---Forest plot of HIV prevalence by subnational HIV
+#presumptive
+table(df2b$popHIVprev)
+
+tiff("g2a.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e21_HIV._suspects, e20_susp_scrnhiv, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=popHIVprev, comb.fixed=T, comb.random=T, sm="PAS", data=df2b), 
+       sortvar=df2b$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off() 
+
+#TB patients
+tiff("g2b.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e28_n_HIVposTB, e27_Tbcases_HIVden, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=popHIVprev, comb.fixed=T, comb.random=T, sm="PAS", data=df2b), 
+       sortvar=df2b$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off() 
+
+#g3---Forest plot of HIV prevalence  by national art cov
+#presumptive
+table(df2b$artcov)
+
+tiff("g3a.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e21_HIV._suspects, e20_susp_scrnhiv, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=artcov, comb.fixed=T, comb.random=T, sm="PAS", data=df2b), 
+       sortvar=df2b$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off() 
+
+#TB patients
+tiff("g3b.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e28_n_HIVposTB, e27_Tbcases_HIVden, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=artcov, comb.fixed=T, comb.random=T, sm="PAS", data=df2b), 
+       sortvar=df2b$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off() 
+
+#g5---Forest plot of HIV prevalence  by national symptoms
+
+#presumptive
+table(df2b$definition)
+
+tiff("g5a.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e21_HIV._suspects, e20_susp_scrnhiv, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=definition, comb.fixed=T, comb.random=T, sm="PAS", data=df2b), 
+       sortvar=df2b$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off() 
+
+#TB patients
+tiff("g5b.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e28_n_HIVposTB, e27_Tbcases_HIVden, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=definition, comb.fixed=T, comb.random=T, sm="PAS", data=df2b), 
+       sortvar=df2b$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off() 
+
+#g5---Forest plot of HIV prevalence in presumptive TB patients by national symptoms
+
+table(df2b$subregion)
+
+df2b$subregion[df2b$subregion=="East Africa"]<-"Central Africa" 
+df2b$subregion[df2b$subregion=="Southern Africa"]<-"Central Africa" 
+df2b$subregion[df2b$subregion=="West Africa"]<-"Central Africa"
+df2b$subregion[df2b$subregion=="Americas"]<-"South-East Asia"
+df2b$subregion[df2b$subregion=="Western pacific"]<-"South-East Asia"
+df2b$subregion <- factor(as.character(df2b$subregion), levels = c("Central Africa", "South-East Asia"))
+
+#g5---Forest plot of HIV prevalence by subregion
+
+#presumptives
+table(df2b$subregion)
+
+tiff("g5a.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e21_HIV._suspects, e20_susp_scrnhiv, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=subregion, comb.fixed=T, comb.random=T, sm="PAS", data=df2b), 
+       sortvar=df2b$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off() 
+
+#TB patients
+tiff("g5b.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e28_n_HIVposTB, e27_Tbcases_HIVden, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=subregion, comb.fixed=T, comb.random=T, sm="PAS", data=df2b), 
+       sortvar=df2b$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off() 
+
+#g6---Forest plot of HIV prevalence by year
+
+table(df2b$midyr)
+
+#presumptive
+tiff("g6a.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e21_HIV._suspects, e20_susp_scrnhiv, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=midyr, comb.fixed=T, comb.random=T, sm="PAS", data=df2b), 
+       sortvar=df2b$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off()
+
+#TB patients
+tiff("g6b.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e28_n_HIVposTB, e27_Tbcases_HIVden, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=midyr, comb.fixed=T, comb.random=T, sm="PAS", data=df2b), 
+       sortvar=df2b$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off() 
+
+
+```
+
+##discussion figure
+
+```{r}
+table(df2b$popHIVprev)
+table(df2b$artcov)
+#cell A
+df4a<- subset(df2b, popHIVprev== "low (0-5%)" & artcov== "low (0-40%)")
+#general pop
+mean(df4a$e50_subHIV_perc)
+error <- qt(0.975,df=length(df4a$e50_subHIV_perc)-1)*sd(df4a$e50_subHIV_perc)/sqrt(length(df4a$e50_subHIV_perc))
+error
+
+lowera<-mean(df4a$e50_subHIV_perc)-error
+lowera
+uppera<-mean(df4a$e50_subHIV_perc)+error
+uppera
+
+#cell b
+df4b<- subset(df2b, popHIVprev== "low (0-5%)" & artcov== "moderate(40-81%)")
+#general pop
+mean(df4b$e50_subHIV_perc)
+errorb <- qt(0.975,df=length(df4b$e50_subHIV_perc)-1)*sd(df4b$e50_subHIV_perc)/sqrt(length(df4b$e50_subHIV_perc))
+errorb
+
+lowerb<-mean(df4b$e50_subHIV_perc)-error
+lowerb
+upperb<-mean(df4b$e50_subHIV_perc)+error
+upperb
+
+#cell c
+df4c<- subset(df2b, popHIVprev== "high(5-30%)" & artcov== "low (0-40%)")
+
+#general pop
+mean(df4c$e50_subHIV_perc)
+errorc <- qt(0.975,df=length(df4c$e50_subHIV_perc)-1)*sd(df4c$e50_subHIV_perc)/sqrt(length(df4c$e50_subHIV_perc))
+errorc
+
+lowerc<-mean(df4c$e50_subHIV_perc)-error
+lowerc
+upperc<-mean(df4c$e50_subHIV_perc)+error
+upperc
+
+#cell d
+#general pop
+df4d<- subset(df2b, popHIVprev== "high(5-30%)" & artcov== "moderate(40-81%)")
+mean(df4d$e50_subHIV_perc)
+errord <- qt(0.975,df=length(df4d$e50_subHIV_perc)-1)*sd(df4d$e50_subHIV_perc)/sqrt(length(df4d$e50_subHIV_perc))
+errord
+
+lowerd<-mean(df4d$e50_subHIV_perc)-error
+lowerd
+upperd<-mean(df4d$e50_subHIV_perc)+error
+upperd
+
+df5a<- subset(df2b, popHIVprev== "low (0-5%)")
+#suspects
+tiff("f5a.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e21_HIV._suspects, e20_susp_scrnhiv, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=artcov, comb.fixed=T, comb.random=T, sm="PAS", data=df5a), 
+       sortvar=df5a$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off() 
+
+df5b<- subset(df2b, popHIVprev== "high(5-30%)")
+#suspects
+tiff("f5b.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e21_HIV._suspects, e20_susp_scrnhiv, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=artcov, comb.fixed=T, comb.random=T, sm="PAS", data=df5b), 
+       sortvar=df5b$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off() 
+
+#TB patients
+df6a<- subset(df2b, popHIVprev== "low (0-5%)")
+#suspects
+tiff("f6a.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e28_n_HIVposTB, e27_Tbcases_HIVden, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=artcov, comb.fixed=T, comb.random=T, sm="PAS", data=df6a), 
+       sortvar=df6a$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off() 
+
+df6b<- subset(df2b, popHIVprev== "high(5-30%)")
+#patients
+tiff("f6b.tiff", height=20, width=11, units="in", res=300, compression="lzw")
+forest(metaprop(e28_n_HIVposTB, e27_Tbcases_HIVden, studlab= label, title="HIV prevalence in adults with TB symptoms", byvar=artcov, comb.fixed=T, comb.random=T, sm="PAS", data=df6b), 
+       sortvar=df6b$p, xlim=c(0, 100), fontsize=14, pscale=100, pooled.totals=T, pooled.events=T, print.tau2=T, print.I2=T, digits=1, 
+  leftcols = c("studlab", "n"), 
+  rightcols = c("effect", "ci", "w.random"), 
+  leftlabs = c("Study", "N"), rightlabs= c("Prev.(%)", "95% CI", "w.random"), 
+  xlab = "HIV Prevalence (%)", lwd =1, just="right", col.diamond = "black", col.by = "black")
+dev.off() 
+
+
+#dodge graph
+
+rateg<-read.csv("error_table.csv", stringsAsFactors=T)
+str(rateg)
+
+rateg$artcov<-factor(rateg$artcov, levels=c(1:2),labels=c("low","high"))
+rateg$group<-factor(rateg$group, levels=c(1:3),labels=c("general","presumptive", "tbpatient"))
+
+dodge <- position_dodge(width =0.7)
+
+ggplot(rateg, aes(x=group, y=mean, group=artcov, colour=artcov, linetype=artcov, shape=artcov)) +   geom_errorbar(position = dodge, aes(ymin=lower, ymax=upper), width=0.4, size=1)+
+  theme_bw()+
+  scale_linetype_manual(values=c("solid", "solid"))+
+  #geom_hline(yintercept=1, linetype="dotted")+
+  scale_color_manual(values=c("firebrick", "steelblue"))+
+  scale_y_continuous(limits=c(0,100), breaks = c(0,25,50,75,100), minor_breaks = seq(0,100, 5))+
+  #scale_x_continuous(breaks = c(1,2,3))+
+  scale_shape_manual(values=c(19, 19))+
+  #labs(title="TB case notification rates\n (by HIV status and gender)") + 
+  #theme(legend.position = c(0.8, 0.8)) +
+  #labs(y = "HIV positive to HIV negative \n TB incidence rate ratio (95% CI)") +
+  #labs(x = "Age group (years)") + 
+  theme(axis.text.y=element_text(size=15)) +
+  theme(axis.text.x=element_text(size=12, angle = 0)) +
+  theme(axis.title.y=element_text(size=17)) + 
+  theme(axis.title.x=element_text(size=15))+
+  geom_point(size=3, fill="white", position = dodge)+
+  guides(color=guide_legend("artcov"))+
+  facet_grid(. ~subhiv)
+  
+ggsave("rateg.png", dpi = 600)
+
+
+```
+
